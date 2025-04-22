@@ -6,6 +6,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
+    <!-- Main content -->
     <LinearLayout
         android:orientation="vertical"
         android:layout_width="match_parent"
@@ -15,60 +16,66 @@
         <androidx.appcompat.widget.Toolbar
             android:id="@+id/topAppBar"
             android:layout_width="match_parent"
-            android:layout_height="?attr/actionBarSize"
+            android:layout_height="wrap_content"
             android:background="?attr/colorPrimary"
             android:theme="@style/ThemeOverlay.AppCompat.Dark.ActionBar"
-            android:title="Graph View"
-            android:titleTextColor="@android:color/white" />
+            app:titleTextColor="@android:color/white" />
 
-        <!-- Graph Area -->
-        <FrameLayout
+        <!-- Chart area -->
+        <ScrollView
             android:layout_width="match_parent"
             android:layout_height="0dp"
-            android:layout_weight="1"
-            android:padding="12dp">
+            android:layout_weight="1">
 
-            <com.github.mikephil.charting.charts.PieChart
-                android:id="@+id/pieChart"
+            <LinearLayout
+                android:orientation="vertical"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:visibility="gone" />
+                android:layout_height="wrap_content"
+                android:padding="16dp">
 
-            <com.github.mikephil.charting.charts.BarChart
-                android:id="@+id/barChart"
-                android:layout_width="match_parent"
-                android:layout_height="match_parent"
-                android:visibility="gone" />
-        </FrameLayout>
+                <com.github.mikephil.charting.charts.PieChart
+                    android:id="@+id/pieChart"
+                    android:layout_width="match_parent"
+                    android:layout_height="300dp"
+                    android:visibility="gone" />
 
-        <!-- Return Button -->
-        <Button
-            android:id="@+id/returnBtn"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Return"
-            android:layout_gravity="center"
-            android:backgroundTint="@android:color/holo_blue_dark"
-            android:textColor="@android:color/white"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="16dp"/>
+                <com.github.mikephil.charting.charts.BarChart
+                    android:id="@+id/barChart"
+                    android:layout_width="match_parent"
+                    android:layout_height="300dp"
+                    android:layout_marginTop="16dp"
+                    android:visibility="gone" />
+
+                <Button
+                    android:id="@+id/returnBtn"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="24dp"
+                    android:text="Return"
+                    android:backgroundTint="@color/blue"
+                    android:textColor="@android:color/white"
+                    android:textAllCaps="false"
+                    android:padding="12dp" />
+            </LinearLayout>
+        </ScrollView>
 
         <!-- Bottom Navigation -->
         <com.google.android.material.bottomnavigation.BottomNavigationView
             android:id="@+id/bottomNavigation"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            app:menu="@menu/bottom_nav_menu"
-            android:background="?android:attr/windowBackground" />
+            android:layout_gravity="bottom"
+            android:background="@android:color/white"
+            app:menu="@menu/bottom_nav_menu" />
     </LinearLayout>
 
-    <!-- Navigation Drawer -->
+    <!-- Drawer Menu -->
     <com.google.android.material.navigation.NavigationView
         android:id="@+id/navigation_view"
         android:layout_width="wrap_content"
         android:layout_height="match_parent"
         android:layout_gravity="start"
-        app:menu="@menu/drawer_menu"
         app:headerLayout="@layout/nav_header"
-        android:fitsSystemWindows="true" />
+        app:menu="@menu/drawer_menu" />
+
 </androidx.drawerlayout.widget.DrawerLayout>

@@ -3,6 +3,7 @@ package com.example.networkcellanalyzer
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.Menu
 import android.view.MenuItem
 import android.widget.*
@@ -114,20 +115,40 @@ class StatisticsResultActivity : AppCompatActivity(), NavigationView.OnNavigatio
                 val powerDev: SignalPowerDeviceResponse = apiService.getSignalPowerPerDevice(authHeader, deviceId, startISO, endISO)
                 val sinr = apiService.getSINRStats(authHeader, deviceId, startISO, endISO)
 
-                operatorStatsValue.text = "Alfa: ${opStats["Alfa"]}, touch: ${opStats["touch"]}"
+                // Log raw data from API
+                Log.d("StatisticsResultActivity", "Raw operator stats: $opStats")
+                Log.d("StatisticsResultActivity", "Raw network stats: $netStats")
+                Log.d("StatisticsResultActivity", "Raw power network: $powerNet")
+                Log.d("StatisticsResultActivity", "Raw power device: ${powerDev.average_signal_power}")
+                Log.d("StatisticsResultActivity", "Raw SINR: $sinr")
+
+                // Display % for Alfa & Touch
+                val alfa = opStats["Alfa"]?.toString()?.toFloatOrNull() ?: 0f
+                val touch = opStats["touch"]?.toString()?.toFloatOrNull() ?: 0f  // fallback to lowercase
+                val touchAlt = opStats["Touch"]?.toString()?.toFloatOrNull() ?: 0f
+                val touchFinal = if (touchAlt > 0f) touchAlt else touch
+
+                val total = alfa + touchFinal
+                val alfaPct = if (total > 0) (alfa / total) * 100 else 0f
+                val touchPct = if (total > 0) (touchFinal / total) * 100 else 0f
+                val twoGValue = netStats["2G"]?.toString()?.replace("%", "")?.trim()?.toFloatOrNull() ?: 0f
+                val threeGValue = netStats["3G"]?.toString()?.replace("%", "")?.trim()?.toFloatOrNull() ?: 0f
+                val fourGValue = netStats["4G"]?.toString()?.replace("%", "")?.trim()?.toFloatOrNull() ?: 0f
+
+
+                operatorStatsValue.text = "Alfa: ${"%.1f".format(alfaPct)}%, Touch: ${"%.1f".format(touchPct)}%"
+
                 networkTypeStatsValue.text = "4G: ${netStats["4G"]}, 3G: ${netStats["3G"]}, 2G: ${netStats["2G"]}"
                 signalPowerPerNetworkValue.text = "4G: ${powerNet["4G"]} dB, 3G: ${powerNet["3G"]} dB, 2G: ${powerNet["2G"]} dB"
                 signalPowerPerDeviceValue.text = "Device: ${powerDev.device_id}, Power: ${powerDev.average_signal_power} dB"
                 sinrStatsValue.text = "4G: ${sinr["4G"]} dB, 3G: ${sinr["3G"]} dB, 2G: ${sinr["2G"]} dB"
 
+                // Button: Graphs
                 findViewById<Button>(R.id.operatorStatsGraphBtn).setOnClickListener {
                     launchGraph(
                         "Average Connectivity Time Per Operator", "pie",
                         arrayListOf("Alfa", "Touch"),
-                        floatArrayOf(
-                            opStats["Alfa"]?.toString()?.toFloatOrNull() ?: 0f,
-                            opStats["Touch"]?.toString()?.toFloatOrNull() ?: 0f
-                        )
+                        floatArrayOf(alfa, touch)
                     )
                 }
 
@@ -136,58 +157,86 @@ class StatisticsResultActivity : AppCompatActivity(), NavigationView.OnNavigatio
                         "Average Connectivity Time Per Network Type", "pie",
                         arrayListOf("2G", "3G", "4G"),
                         floatArrayOf(
-                            netStats["2G"]?.toString()?.toFloatOrNull() ?: 0f,
-                            netStats["3G"]?.toString()?.toFloatOrNull() ?: 0f,
-                            netStats["4G"]?.toString()?.toFloatOrNull() ?: 0f
+                            twoGValue,
+                            threeGValue,
+                            fourGValue
                         )
                     )
                 }
 
                 findViewById<Button>(R.id.signalPowerPerNetworkGraphBtn).setOnClickListener {
+                    // For signal power, we need to handle negative values for pie charts
+                    val power2G = powerNet["2G"]?.toString()?.toFloatOrNull() ?: 0f
+                    val power3G = powerNet["3G"]?.toString()?.toFloatOrNull() ?: 0f
+                    val power4G = powerNet["4G"]?.toString()?.toFloatOrNull() ?: 0f
+
+                    // For pie charts, convert to absolute values and add offset to ensure positivity
+                    val chartType = if (power2G < 0 || power3G < 0 || power4G < 0) "bar" else "pie"
+
                     launchGraph(
-                        "Average Signal Power Per Network Type", "pie",
+                        "Average Signal Power Per Network Type", chartType,
                         arrayListOf("2G", "3G", "4G"),
-                        floatArrayOf(
-                            powerNet["2G"]?.toString()?.toFloatOrNull() ?: 0f,
-                            powerNet["3G"]?.toString()?.toFloatOrNull() ?: 0f,
-                            powerNet["4G"]?.toString()?.toFloatOrNull() ?: 0f
-                        )
+                        floatArrayOf(power2G, power3G, power4G)
                     )
                 }
 
                 findViewById<Button>(R.id.signalPowerPerDeviceGraphBtn).setOnClickListener {
+                    val powerValue = powerDev.average_signal_power?.toFloat() ?: 0f
+
+                    // For signal power, we'll always use bar chart to handle negative values
                     launchGraph(
                         "Average Signal Power Per Device", "bar",
                         arrayListOf(powerDev.device_id ?: "This Device"),
-                        floatArrayOf(powerDev.average_signal_power?.toFloat() ?: 0f)
+                        floatArrayOf(powerValue)
                     )
                 }
 
                 findViewById<Button>(R.id.sinrStatsGraphBtn).setOnClickListener {
+                    val sinr2G = sinr["2G"]?.toString()?.toFloatOrNull() ?: 0f
+                    val sinr3G = sinr["3G"]?.toString()?.toFloatOrNull() ?: 0f
+                    val sinr4G = sinr["4G"]?.toString()?.toFloatOrNull() ?: 0f
+
+                    // For SINR, use bar chart to handle potential negative values
                     launchGraph(
                         "Average SINR/SNR Per Network Type", "bar",
                         arrayListOf("2G", "3G", "4G"),
-                        floatArrayOf(
-                            sinr["2G"]?.toString()?.toFloatOrNull() ?: 0f,
-                            sinr["3G"]?.toString()?.toFloatOrNull() ?: 0f,
-                            sinr["4G"]?.toString()?.toFloatOrNull() ?: 0f
-                        )
+                        floatArrayOf(sinr2G, sinr3G, sinr4G)
                     )
                 }
 
             } catch (e: Exception) {
                 Toast.makeText(this@StatisticsResultActivity, "Error loading stats: ${e.message}", Toast.LENGTH_LONG).show()
+                Log.e("StatisticsResultActivity", "Error loading stats", e)
                 e.printStackTrace()
             }
         }
     }
 
     private fun launchGraph(title: String, type: String, labels: ArrayList<String>, values: FloatArray) {
-        val intent = Intent(this, GraphActivity::class.java)
-        intent.putExtra("title", title)
-        intent.putExtra("chart_type", type)
-        intent.putStringArrayListExtra("labels", labels)
-        intent.putExtra("values", values)
+        // Log the values before any filtering
+        Log.d("StatisticsResultActivity", "Before filter - Labels: $labels | Values: ${values.joinToString()}")
+
+        // For pie charts, data points must be positive
+        if (type == "pie" && values.all { it <= 0f }) {
+            Toast.makeText(this, "No positive values available for pie chart", Toast.LENGTH_SHORT).show()
+            Log.e("StatisticsResultActivity", "No positive values for pie chart")
+            return
+        }
+
+        // For bar charts, we should have at least some non-zero data
+        if (type == "bar" && values.all { it == 0f }) {
+            Toast.makeText(this, "No data available for bar chart", Toast.LENGTH_SHORT).show()
+            Log.e("StatisticsResultActivity", "No data for bar chart")
+            return
+        }
+
+
+        val intent = Intent(this, GraphActivity::class.java).apply {
+            putExtra("title", title)
+            putExtra("chart_type", type)
+            putStringArrayListExtra("labels", labels)
+            putExtra("values", values)
+        }
         startActivity(intent)
     }
 

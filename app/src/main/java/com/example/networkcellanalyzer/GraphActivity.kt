@@ -3,8 +3,11 @@ package com.example.networkcellanalyzer
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.util.Log
 import android.view.MenuItem
+import android.view.View
 import android.widget.Button
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.Toolbar
 import androidx.core.view.GravityCompat
@@ -16,11 +19,11 @@ import com.github.mikephil.charting.charts.BarChart
 import com.github.mikephil.charting.charts.PieChart
 import com.github.mikephil.charting.components.Description
 import com.github.mikephil.charting.data.*
+import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
+import com.github.mikephil.charting.formatter.PercentFormatter
 import com.github.mikephil.charting.utils.ColorTemplate
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.navigation.NavigationView
-import com.github.mikephil.charting.formatter.IndexAxisValueFormatter
-
 
 class GraphActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelectedListener {
 
@@ -32,13 +35,16 @@ class GraphActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelect
     private lateinit var returnBtn: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        Log.d("GraphActivity", "✅ onCreate called!")
+
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_graph)
 
-        // Setup top bar
+        // Top App Bar
         val toolbar = findViewById<Toolbar>(R.id.topAppBar)
         setSupportActionBar(toolbar)
 
+        // Drawer & Navigation
         drawerLayout = findViewById(R.id.drawer_layout)
         navView = findViewById(R.id.navigation_view)
         val toggle = androidx.appcompat.app.ActionBarDrawerToggle(
@@ -49,6 +55,7 @@ class GraphActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelect
         toggle.syncState()
         navView.setNavigationItemSelectedListener(this)
 
+        // Bottom Navigation
         bottomNav = findViewById(R.id.bottomNavigation)
         bottomNav.setOnItemSelectedListener {
             when (it.itemId) {
@@ -68,63 +75,132 @@ class GraphActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelect
             }
         }
 
+        // Views
         pieChart = findViewById(R.id.pieChart)
         barChart = findViewById(R.id.barChart)
         returnBtn = findViewById(R.id.returnBtn)
 
-        returnBtn.setOnClickListener {
-            finish()
-        }
+        returnBtn.setOnClickListener { finish() }
 
         loadChart()
     }
 
     private fun loadChart() {
-        val title = intent.getStringExtra("title") ?: ""
+        val title = intent.getStringExtra("title") ?: "Graph"
         val chartType = intent.getStringExtra("chart_type") ?: ""
         val labels = intent.getStringArrayListExtra("labels") ?: arrayListOf()
         val values = intent.getFloatArrayExtra("values") ?: floatArrayOf()
 
         supportActionBar?.title = title
 
-        if (chartType == "pie") {
-            pieChart.visibility = PieChart.VISIBLE
-            barChart.visibility = BarChart.GONE
+        Log.d("GraphActivity", "Loading chart: $title ($chartType)")
+        Log.d("GraphActivity", "Labels: $labels")
+        Log.d("GraphActivity", "Values: ${values.joinToString()}")
 
-            val entries = ArrayList<PieEntry>()
-            for (i in labels.indices) {
-                entries.add(PieEntry(values[i], labels[i]))
+        if (labels.isEmpty() || values.isEmpty() || labels.size != values.size) {
+            Toast.makeText(this, "Chart data is missing or mismatched.", Toast.LENGTH_LONG).show()
+            Log.e("GraphActivity", "Invalid chart data: Labels: $labels, Values: ${values.contentToString()}")
+            return
+        }
+
+        when (chartType) {
+            "pie" -> {
+                pieChart.visibility = View.VISIBLE
+                barChart.visibility = View.GONE
+
+                val entries = mutableListOf<PieEntry>()
+                var totalValue = 0f
+
+                // First pass: calculate total for percentage
+                for (value in values) {
+                    if (value > 0f) totalValue += value
+                }
+
+                // Only create entries if we have a positive total
+                if (totalValue > 0f) {
+                    // Second pass: create the entries
+                    for (i in labels.indices) {
+                        val value = values[i]
+                        // For pie charts, ensure values are positive
+                        if (value > 0f) {
+                            entries.add(PieEntry(value, labels[i]))
+                            Log.d("GraphActivity", "Added pie entry: ${labels[i]} = $value")
+                        }
+                    }
+                }
+
+                if (entries.isEmpty()) {
+                    Log.e("GraphActivity", "No entries for pie chart")
+                    Toast.makeText(this, "No valid data for pie chart", Toast.LENGTH_SHORT).show()
+                    finish()
+                    return
+                }
+
+                val dataSet = PieDataSet(entries, "")
+                dataSet.colors = ColorTemplate.MATERIAL_COLORS.toList()
+                dataSet.valueTextSize = 14f
+                dataSet.valueFormatter = PercentFormatter(pieChart)
+
+                val data = PieData(dataSet)
+                pieChart.apply {
+                    setUsePercentValues(true)
+                    this.data = data
+                    description = Description().apply { text = title }
+                    setEntryLabelColor(android.graphics.Color.BLACK)
+                    setEntryLabelTextSize(12f)
+                    centerText = title
+                    setCenterTextSize(16f)
+                    legend.isEnabled = true
+                    setDrawEntryLabels(false)
+                    animateY(1000)
+                    invalidate()
+                }
+
+                Log.d("GraphActivity", "Pie chart created with ${entries.size} entries")
             }
 
-            val dataSet = PieDataSet(entries, "")
-            dataSet.colors = ColorTemplate.MATERIAL_COLORS.toList()
-            val data = PieData(dataSet)
+            "bar" -> {
+                pieChart.visibility = View.GONE
+                barChart.visibility = View.VISIBLE
 
-            pieChart.data = data
-            pieChart.description = Description().apply { text = "" }
-            pieChart.animateY(1000)
-            pieChart.invalidate()
+                val entries = mutableListOf<BarEntry>()
+                for (i in labels.indices) {
+                    Log.d("GraphActivity", "Bar value for ${labels[i]}: ${values[i]}")
+                    entries.add(BarEntry(i.toFloat(), values[i]))
+                }
 
-        } else {
-            barChart.visibility = BarChart.VISIBLE
-            pieChart.visibility = PieChart.GONE
+                val dataSet = BarDataSet(entries, "Values")
+                dataSet.colors = ColorTemplate.MATERIAL_COLORS.toList()
+                dataSet.valueTextSize = 14f
 
-            val entries = ArrayList<BarEntry>()
-            for (i in labels.indices) {
-                entries.add(BarEntry(i.toFloat(), values[i]))
+                val barData = BarData(dataSet)
+                barData.barWidth = 0.9f
+
+                barChart.apply {
+                    data = barData
+                    setFitBars(true)
+                    description = Description().apply { text = title }
+
+                    val xAxis = this.xAxis
+                    xAxis.valueFormatter = IndexAxisValueFormatter(labels)
+                    xAxis.granularity = 1f
+                    xAxis.isGranularityEnabled = true
+                    xAxis.labelRotationAngle = -45f
+                    xAxis.position = com.github.mikephil.charting.components.XAxis.XAxisPosition.BOTTOM
+
+                    axisRight.isEnabled = false
+                    legend.isEnabled = true
+                    animateY(1000)
+                    invalidate()
+                }
+
+                Log.d("GraphActivity", "Bar chart created with ${entries.size} entries")
             }
 
-            val dataSet = BarDataSet(entries, "Values")
-            dataSet.colors = ColorTemplate.MATERIAL_COLORS.toList()
-            val data = BarData(dataSet)
-
-            barChart.data = data
-            barChart.xAxis.valueFormatter = IndexAxisValueFormatter(labels)
-            barChart.xAxis.granularity = 1f
-            barChart.xAxis.isGranularityEnabled = true
-            barChart.description = Description().apply { text = "" }
-            barChart.animateY(1000)
-            barChart.invalidate()
+            else -> {
+                Toast.makeText(this, "Unknown chart type: $chartType", Toast.LENGTH_SHORT).show()
+                Log.e("GraphActivity", "Unknown chart type: $chartType")
+            }
         }
     }
 
