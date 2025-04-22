@@ -114,7 +114,7 @@ class StatisticsResultActivity : AppCompatActivity(), NavigationView.OnNavigatio
                 val powerDev: SignalPowerDeviceResponse = apiService.getSignalPowerPerDevice(authHeader, deviceId, startISO, endISO)
                 val sinr = apiService.getSINRStats(authHeader, deviceId, startISO, endISO)
 
-                operatorStatsValue.text = "Alfa: ${opStats["Alfa"]}, Touch: ${opStats["Touch"]}"
+                operatorStatsValue.text = "Alfa: ${opStats["Alfa"]}, touch: ${opStats["touch"]}"
                 networkTypeStatsValue.text = "4G: ${netStats["4G"]}, 3G: ${netStats["3G"]}, 2G: ${netStats["2G"]}"
                 signalPowerPerNetworkValue.text = "4G: ${powerNet["4G"]} dB, 3G: ${powerNet["3G"]} dB, 2G: ${powerNet["2G"]} dB"
                 signalPowerPerDeviceValue.text = "Device: ${powerDev.device_id}, Power: ${powerDev.average_signal_power} dB"

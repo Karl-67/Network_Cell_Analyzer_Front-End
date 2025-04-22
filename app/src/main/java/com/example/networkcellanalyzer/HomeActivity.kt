@@ -32,8 +32,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import utils.ApiClient
 import utils.DeviceInfoUtil
-import utils.DeviceInfoUtil.getCurrentTimestamp
 import utils.NetworkUtil
+import utils.DeviceInfoUtil.getCurrentTimestamp
 
 class HomeActivity : AppCompatActivity() {
     companion object {
@@ -65,12 +65,12 @@ class HomeActivity : AppCompatActivity() {
 
     private lateinit var refreshOverlay: CardView
     private lateinit var refreshProgress: ProgressBar
+    private lateinit var binding: ActivityHomeBinding
+    private lateinit var noConnectionView: View
     private val handler = Handler(Looper.getMainLooper())
     private val refreshInterval = 10000L
     private var isRefreshScheduled = false
 
-    private lateinit var binding: ActivityHomeBinding
-    private lateinit var noConnectionView: View
     private lateinit var drawerLayout: DrawerLayout
     private lateinit var toggle: ActionBarDrawerToggle
 
@@ -83,13 +83,14 @@ class HomeActivity : AppCompatActivity() {
         setupBottomNavigation()
 
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
-        drawerLayout = findViewById(R.id.drawer_layout)
-        toggle = ActionBarDrawerToggle(this, drawerLayout, toolbar, R.string.navigation_drawer_open, R.string.navigation_drawer_close)
-        drawerLayout.addDrawerListener(toggle)
-        toggle.syncState()
-
         setSupportActionBar(toolbar)
         supportActionBar?.setDisplayShowTitleEnabled(false)
+
+        drawerLayout = findViewById(R.id.drawer_layout)
+        toggle = ActionBarDrawerToggle(this, drawerLayout, toolbar,
+            R.string.navigation_drawer_open, R.string.navigation_drawer_close)
+        drawerLayout.addDrawerListener(toggle)
+        toggle.syncState()
 
         setupNoConnectionView()
 
@@ -125,8 +126,7 @@ class HomeActivity : AppCompatActivity() {
         bottomNavigationView.setOnItemSelectedListener { item ->
             when (item.itemId) {
                 R.id.navigation_radio -> {
-                    val intent = Intent(this, StatisticsActivity::class.java)
-                    startActivity(intent)
+                    startActivity(Intent(this, StatisticsActivity::class.java))
                     true
                 }
                 R.id.navigation_square -> true
@@ -139,39 +139,200 @@ class HomeActivity : AppCompatActivity() {
         }
     }
 
+    private fun startUpdatingTimestamp() { //this is to make sure that the timestamp is live
+        val updateTimestampRunnable = object : Runnable {
+            override fun run() {
+                // Get current timestamp
+                val timestamp = getCurrentTimestamp()
+                // Update the TextView
+                timeStampOutput.text = timestamp
+
+                // Call this function again after 1 second (1000 milliseconds)
+                handler.postDelayed(this, 1000)
+            }
+        }
+
+        // Start the periodic updates
+        handler.post(updateTimestampRunnable)
+    }
+
+    private fun checkAndRequestPermissions() { //requesting permissions from the user
+        val locationPermission = ActivityCompat.checkSelfPermission(
+            this,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        )
+        val phoneStatePermission = ActivityCompat.checkSelfPermission(
+            this,
+            Manifest.permission.READ_PHONE_STATE
+        )
+
+        // If both permissions are granted, load data
+        if (locationPermission == PackageManager.PERMISSION_GRANTED &&
+            phoneStatePermission == PackageManager.PERMISSION_GRANTED) {
+            loadDeviceData()
+            startUpdatingTimestamp()
+            return
+        }
+
+        // Create a list of permissions to request
+        val permissionsToRequest = mutableListOf<String>()
+
+        if (locationPermission != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        }
+
+        if (phoneStatePermission != PackageManager.PERMISSION_GRANTED) {
+            permissionsToRequest.add(Manifest.permission.READ_PHONE_STATE)
+        }
+
+        // Request permissions
+        ActivityCompat.requestPermissions(
+            this,
+            permissionsToRequest.toTypedArray(),
+            REQUEST_PERMISSIONS
+        )
+    }
+
+    // Handle permission result in one place
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == REQUEST_PERMISSIONS) {
+            if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+                // Permissions granted, load device data and continue the live time
+                loadDeviceData()
+                startUpdatingTimestamp()
+            } else {
+                startUpdatingTimestamp()
+                // Load basic data without permissions
+                val deviceId = sessionManager.getDeviceId() ?: DeviceInfoUtil.getDeviceId(this)
+                val macAddress = sessionManager.getMacAddress() ?: DeviceInfoUtil.getMacAddress()
+                val timestamp = DeviceInfoUtil.getCurrentTimestamp()
+
+                cellIdOutput.text = "Permission required"
+                operatorOutput.text = "Permission required"
+                networkTypeOutput.text = "Permission required"
+                frequencyBandOutput.text = "Permission required"
+                sinrOutput.text = "N/A"
+
+                deviceIdOutput.text = deviceId
+                macAddressOutput.text = macAddress
+                timeStampOutput.text = timestamp
+
+                networkData.deviceId = deviceId
+                networkData.macAddress = macAddress
+                networkData.timestamp = timestamp
+
+                // Check if user denied with "Don't ask again"
+                val anyPermanentlyDenied = permissions.indices.any { i ->
+                    grantResults[i] != PackageManager.PERMISSION_GRANTED &&
+                            !ActivityCompat.shouldShowRequestPermissionRationale(this, permissions[i])
+                }
+
+                if (anyPermanentlyDenied) {
+                    // Show settings dialog
+                    showSettingsDialog()
+                } else {
+                    // Show permission explanation dialog
+                    Toast.makeText(
+                        this,
+                        "Permissions are required for complete network information",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+
+
+
+        }
+    }
+
+    private fun showSettingsDialog() {
+        AlertDialog.Builder(this)
+            .setTitle("Permissions Required")
+            .setMessage("Location and Phone permissions are required to analyze network cells. Please enable them in app settings.")
+            .setPositiveButton("Go to Settings") { _, _ ->
+                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+                val uri = Uri.fromParts("package", packageName, null)
+                intent.data = uri
+                startActivityForResult(intent, SETTINGS_REQUEST_CODE)
+            }
+            .setNegativeButton("Cancel") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .show()
+    }
+
+
+    private fun showLimitedFunctionality() {
+        Toast.makeText(this, "Limited functionality due to missing permissions.", Toast.LENGTH_LONG).show()
+        deviceIdOutput.text = DeviceInfoUtil.getDeviceId(this)
+        macAddressOutput.text = DeviceInfoUtil.getMacAddress()
+    }
+
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == SETTINGS_REQUEST_CODE) {
+            // Check permissions again after returning from settings
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED &&
+                ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) ==
+                PackageManager.PERMISSION_GRANTED) {
+                startUpdatingTimestamp()
+                loadDeviceData()
+            } else {
+                showSettingsDialog()
+
+                // Still not granted
+                deviceIdOutput.text = DeviceInfoUtil.getDeviceId(this)
+                macAddressOutput.text = DeviceInfoUtil.getMacAddress()
+                cellIdOutput.text = "Permission required"
+                operatorOutput.text = "Permission required"
+                networkTypeOutput.text = "Permission required"
+                frequencyBandOutput.text = "Permission required"
+                sinrOutput.text = "N/A"
+            }
+        }
+    }
+
     private fun setupNoConnectionView() {
         noConnectionView = layoutInflater.inflate(R.layout.layout_no_connection, null)
         noConnectionView.findViewById<View>(R.id.buttonRetry).setOnClickListener {
             checkConnectionAndUpdateUI()
         }
+
         val bottomNav = noConnectionView.findViewById<BottomNavigationView>(R.id.bottomNavigationView)
         bottomNav.setOnItemSelectedListener { item ->
             when (item.itemId) {
-                R.id.navigation_radio -> true
+                R.id.navigation_radio -> {
+                    startActivity(Intent(this, StatisticsActivity::class.java))
+                    true
+                }
                 R.id.navigation_square -> true
                 R.id.navigation_help -> {
-                    val intent = Intent(this, AboutAppActivity::class.java)
-                    startActivity(intent)
+                    startActivity(Intent(this, AboutAppActivity::class.java))
                     true
                 }
                 else -> false
+
             }
         }
     }
 
-    private fun startUpdatingTimestamp() {
-        val updateTimestampRunnable = object : Runnable {
-            override fun run() {
-                timeStampOutput.text = getCurrentTimestamp()
-                handler.postDelayed(this, 1000)
+    private fun checkConnectionAndUpdateUI() {
+        if (!NetworkUtil.isInternetAvailable(this)) {
+            showNoConnectionView()
+        } else {
+            startUpdatingTimestamp()
+            hideNoConnectionView()
+            if (!::refreshOverlay.isInitialized || refreshOverlay.visibility != View.VISIBLE) {
+                startPeriodicRefresh()
             }
         }
-        handler.post(updateTimestampRunnable)
-    }
-
-    private fun stopPeriodicRefresh() {
-        handler.removeCallbacksAndMessages(null)
-        isRefreshScheduled = false
     }
 
     private fun startPeriodicRefresh() {
@@ -180,24 +341,24 @@ class HomeActivity : AppCompatActivity() {
         handler.postDelayed(object : Runnable {
             override fun run() {
                 if (NetworkUtil.isInternetAvailable(this@HomeActivity)) {
-                    refreshOverlay.visibility = View.VISIBLE
-                    handler.postDelayed({
-                        refreshOverlay.visibility = View.GONE
-                    }, 1500)
+                    refreshData()
                 }
                 handler.postDelayed(this, refreshInterval)
             }
         }, refreshInterval)
     }
 
-    private fun checkConnectionAndUpdateUI() {
-        if (!NetworkUtil.isInternetAvailable(this)) {
-            stopPeriodicRefresh()
-            showNoConnectionView()
-        } else {
-            hideNoConnectionView()
-            if (!::refreshOverlay.isInitialized || refreshOverlay.visibility != View.VISIBLE) {
-                startPeriodicRefresh()
+    private fun refreshData() {
+        refreshOverlay.visibility = View.VISIBLE
+        handler.postDelayed({ refreshOverlay.visibility = View.GONE }, 1500)
+
+    }
+
+    private fun startPeriodicConnectivityChecks() {
+        lifecycleScope.launch {
+            while (true) {
+                delay(5000)
+                checkConnectionAndUpdateUI()
             }
         }
     }
@@ -216,119 +377,21 @@ class HomeActivity : AppCompatActivity() {
             (binding.root as ViewGroup).removeView(noConnectionView)
         }
         binding.scrollContent.visibility = View.VISIBLE
-    }
-
-    private fun startPeriodicConnectivityChecks() {
-        lifecycleScope.launch {
-            while (true) {
-                delay(5000)
-                checkConnectionAndUpdateUI()
-            }
-        }
-    }
-
-    private fun checkAndRequestPermissions() {
-        val locationPermission = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-        val phoneStatePermission = ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE)
-
-        if (locationPermission == PackageManager.PERMISSION_GRANTED &&
-            phoneStatePermission == PackageManager.PERMISSION_GRANTED) {
-            loadDeviceData()
-            startUpdatingTimestamp()
-            return
-        }
-
-        val permissionsToRequest = mutableListOf<String>()
-        if (locationPermission != PackageManager.PERMISSION_GRANTED)
-            permissionsToRequest.add(Manifest.permission.ACCESS_FINE_LOCATION)
-        if (phoneStatePermission != PackageManager.PERMISSION_GRANTED)
-            permissionsToRequest.add(Manifest.permission.READ_PHONE_STATE)
-
-        ActivityCompat.requestPermissions(this, permissionsToRequest.toTypedArray(), REQUEST_PERMISSIONS)
-    }
-
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQUEST_PERMISSIONS) {
-            if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
-                loadDeviceData()
-                startUpdatingTimestamp()
-            } else {
-                startUpdatingTimestamp()
-                val deviceId = sessionManager.getDeviceId() ?: DeviceInfoUtil.getDeviceId(this)
-                val macAddress = sessionManager.getMacAddress() ?: DeviceInfoUtil.getMacAddress()
-                val timestamp = DeviceInfoUtil.getCurrentTimestamp()
-
-                cellIdOutput.text = "Permission required"
-                operatorOutput.text = "Permission required"
-                networkTypeOutput.text = "Permission required"
-                frequencyBandOutput.text = "Permission required"
-                sinrOutput.text = "N/A"
-
-                deviceIdOutput.text = deviceId
-                macAddressOutput.text = macAddress
-                timeStampOutput.text = timestamp
-
-                val anyPermanentlyDenied = permissions.indices.any { i ->
-                    grantResults[i] != PackageManager.PERMISSION_GRANTED &&
-                            !ActivityCompat.shouldShowRequestPermissionRationale(this, permissions[i])
-                }
-
-                if (anyPermanentlyDenied) {
-                    showSettingsDialog()
-                } else {
-                    Toast.makeText(this, "Permissions are required for complete network information", Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == SETTINGS_REQUEST_CODE) {
-            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED &&
-                ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED) {
-                startUpdatingTimestamp()
-                loadDeviceData()
-            } else {
-                showSettingsDialog()
-                deviceIdOutput.text = DeviceInfoUtil.getDeviceId(this)
-                macAddressOutput.text = DeviceInfoUtil.getMacAddress()
-                cellIdOutput.text = "Permission required"
-                operatorOutput.text = "Permission required"
-                networkTypeOutput.text = "Permission required"
-                frequencyBandOutput.text = "Permission required"
-                sinrOutput.text = "N/A"
-            }
-        }
-    }
-
-    private fun showSettingsDialog() {
-        AlertDialog.Builder(this)
-            .setTitle("Permissions Required")
-            .setMessage("Location and Phone permissions are required to analyze network cells. Please enable them in app settings.")
-            .setPositiveButton("Go to Settings") { _, _ ->
-                val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-                val uri = Uri.fromParts("package", packageName, null)
-                intent.data = uri
-                startActivityForResult(intent, SETTINGS_REQUEST_CODE)
-            }
-            .setNegativeButton("Cancel") { dialog, _ -> dialog.dismiss() }
-            .show()
+        getCurrentTimestamp()
     }
 
     private fun setupNavigationDrawer() {
         val toolbar = findViewById<Toolbar>(R.id.toolbar)
         val navView = findViewById<NavigationView>(R.id.nav_view)
 
-        toggle = ActionBarDrawerToggle(this, drawerLayout, toolbar, R.string.navigation_drawer_open, R.string.navigation_drawer_close)
+        toggle = ActionBarDrawerToggle(this, drawerLayout, toolbar,
+            R.string.navigation_drawer_open, R.string.navigation_drawer_close)
         drawerLayout.addDrawerListener(toggle)
         toggle.syncState()
 
         navView.setNavigationItemSelectedListener { item ->
             when (item.itemId) {
                 R.id.nav_permissions -> {
-                    Toast.makeText(this, "Opening Permissions", Toast.LENGTH_SHORT).show()
                     showPermissionsDialog()
                     drawerLayout.closeDrawers()
                     true
@@ -348,14 +411,10 @@ class HomeActivity : AppCompatActivity() {
     private fun showPermissionsDialog() {
         AlertDialog.Builder(this)
             .setTitle("Permissions Required")
-            .setMessage(
-                "This app requires the following permissions:\n\n" +
-                        "1. Location: To detect the network cell and measure signal strength.\n" +
-                        "2. Phone State: To access your phone's status for proper network analysis.\n\n" +
-                        "We do not collect any personal data."
-            )
+            .setMessage("1. Location: Detect cell and signal\n2. Phone: Access phone status\n\nNo personal data is collected.")
             .setPositiveButton("OK") { _, _ -> }
             .show()
+        getCurrentTimestamp()
     }
 
     private fun loadDeviceData() {
@@ -364,7 +423,6 @@ class HomeActivity : AppCompatActivity() {
         val ipAddress = sessionManager.getIpAddress() ?: DeviceInfoUtil.getIPAddress()
         val timestamp = DeviceInfoUtil.getCurrentTimestamp()
 
-        networkTypeOutput.text = DeviceInfoUtil.getNetworkType(this)
         deviceIdOutput.text = deviceId
         macAddressOutput.text = macAddress
         timeStampOutput.text = timestamp
@@ -372,6 +430,7 @@ class HomeActivity : AppCompatActivity() {
         networkData.deviceId = deviceId
         networkData.macAddress = macAddress
         networkData.timestamp = timestamp
+        getCurrentTimestamp()
 
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             val cellId = DeviceInfoUtil.getCellId(this)
@@ -382,14 +441,18 @@ class HomeActivity : AppCompatActivity() {
             operatorOutput.text = operatorName
             networkData.operator = operatorName
 
+            val networkType = DeviceInfoUtil.getNetworkType(this)
+            networkTypeOutput.text = networkType
+            networkData.networkType = networkType
+
             val frequencyBand = DeviceInfoUtil.getFrequencyBand(this)
             frequencyBandOutput.text = frequencyBand
             networkData.frequencyBand = frequencyBand
 
-            val (sinr, signalStrength) = DeviceInfoUtil.getSignalMetrics(this)
+            val (sinr, signalPower) = DeviceInfoUtil.getSignalMetrics(this)
             sinrOutput.text = String.format("%.1f dB", sinr)
             networkData.sinr = sinr
-            networkData.signalPower = signalStrength
+            networkData.signalPower = signalPower
 
             Log.d("DeviceInfo", "Device ID: $deviceId, MAC: $macAddress, IP: $ipAddress")
         } else {
